@@ -1,9 +1,10 @@
 {
-  "apiKey": "AIzaSyAG1wCmHKM3iHtDpPg65oNTf8rkwIOWgtw",
+  "apiKey": "AIzaSyAG1WcHMK3iHTDppG65oNTf8rkwIOWgtw",
   "authDomain": "arsip-kemenag-web.firebaseapp.com",
   "projectId": "arsip-kemenag-web",
   "storageBucket": "arsip-kemenag-web.firebasestorage.app",
   "messagingSenderId": "324640277882",
   "appId": "1:324640277882:web:89bc4dc295da36a06702c3",
-  "measurementId": "G-RE0SVLHREV"
+  "measurementId": "G-RE0SVLHREV",
+  "oAuthClientId": "686618370797-r96fms65g08mir1f7328c87mepd5t60p.apps.googleusercontent.com"
 }
