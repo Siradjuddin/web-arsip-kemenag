@@ -1,0 +1,6 @@
+{
+  "name": "Arsip Digital Kemenag Mempawah",
+  "description": "Sistem manajemen dokumen terpadu untuk digitalisasi arsip dan monitoring kedisiplinan pelaporan pegawai (LKH/LKB) secara real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
