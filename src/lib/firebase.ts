@@ -1,10 +1,11 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from "firebase/auth";
+import { getFirestore } from "firebase/firestore"; // <-- 1. Tambahkan ini
 import firebaseConfig from "../../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-
+export const db = getFirestore(app); // <-- 2. Tambahkan ini agar database bisa dipakai
 const provider = new GoogleAuthProvider();
 // Request Google Drive scope (drive.file scope for web applications)
 provider.addScope("https://www.googleapis.com/auth/drive.file");

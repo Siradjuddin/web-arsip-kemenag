@@ -16,6 +16,8 @@ import WhatsAppNotifModal from "./components/WhatsAppNotifModal";
 import { googleSignIn, logout as googleSignOut, getAccessToken } from "./lib/firebase";
 import { listGDriveFolders, createGDriveFolder, GDriveFolder } from "./lib/gdrive";
 
+import { collection, onSnapshot, addDoc, query, orderBy } from "firebase/firestore";
+import { db } from "./lib/firebase";
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -38,7 +40,31 @@ export default function App() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isWaHeaderModalOpen, setIsWaHeaderModalOpen] = useState(false);
   const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);// ==========================================
+  // PENDENGAR OTOMATIS DATABASE FIRESTORE
+  // ==========================================
+  useEffect(() => {
+    const q = query(collection(db, "archives"), orderBy("timestamp", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const archivesData: ArchiveFile[] = [];
+      snapshot.forEach((doc) => {
+        archivesData.push({ id: doc.id, ...doc.data() } as ArchiveFile);
+      });
+      
+      // 1. Mengisi daftar arsip dari database
+      setArchives(archivesData);
+      
+      // 2. Mengubah angka 0 di statistik menjadi hitungan asli dari database
+      setStats((prevStats) => ({
+        ...prevStats,
+        totalArchives: archivesData.length,
+        completedLkhToday: archivesData.filter(a => a.type === 'LKH').length,
+        completedLkbMonth: archivesData.filter(a => a.type === 'LKB').length,
+      }));
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Employee Login & Session Management States
   const [loggedInEmployee, setLoggedInEmployee] = useState<Employee | null>(() => {
