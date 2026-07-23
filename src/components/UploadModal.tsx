@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { X, Upload, FileText, CheckCircle2, Cloud, AlertCircle, RefreshCw, Layers, Link as LinkIcon, LogIn, MessageSquare, Send, ExternalLink } from "lucide-react";
 import { Employee, FileCategory, DocType } from "../types";
 import { collection, addDoc } from "firebase/firestore";
-import { getAccessToken, googleSignIn, db } from "../lib/firebase";
+import { clearGDriveToken, getAccessToken, googleSignIn, db } from "../lib/firebase";
 import { uploadToGDrive, verifyGDriveFolder, getPreviousMonthFolderInfo, formatArchiveFileName } from "../lib/gdrive";
 import { ADMIN_WA_CONTACTS, createUploadWaMessage, openWhatsApp } from "../lib/whatsapp";
 
@@ -252,8 +252,8 @@ export default function UploadModal({
       } catch (verifyErr: any) {
         console.error("Gdrive verify error:", verifyErr);
         const errMessage = verifyErr?.message || String(verifyErr) || "Token Google Drive tidak valid.";
-        localStorage.removeItem("gdrive_access_token");
-        sessionStorage.removeItem("gdrive_access_token");
+        clearGDriveToken();
+        setDriveUserEmail(null);
         setDriveAccessToken(null);
         setDriveError("Token Google Drive tidak valid atau sudah kedaluwarsa. Silakan hubungkan ulang akun admin.");
         await pushLog(`Verifikasi token gagal: ${errMessage}`, 300);
@@ -290,8 +290,8 @@ export default function UploadModal({
         const errMessage = uploadErr?.message || String(uploadErr) || "Unknown error";
         await pushLog(`Catatan GDrive: ${errMessage}. Proses dihentikan.`, 300);
         if (/401|403/.test(errMessage)) {
-          localStorage.removeItem("gdrive_access_token");
-          sessionStorage.removeItem("gdrive_access_token");
+          clearGDriveToken();
+          setDriveUserEmail(null);
           setDriveAccessToken(null);
           setDriveError("Token Google Drive kedaluwarsa atau tidak valid. Silakan hubungkan ulang akun admin.");
         } else {

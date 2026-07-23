@@ -13,7 +13,7 @@ import LoginScreen from "./components/LoginScreen";
 import UserProfile from "./components/UserProfile";
 import WhatsAppNotifModal from "./components/WhatsAppNotifModal";
 
-import { googleSignIn, logout as googleSignOut, getAccessToken } from "./lib/firebase";
+import { clearGDriveToken, googleSignIn, logout as googleSignOut, getAccessToken } from "./lib/firebase";
 import { listGDriveFolders, createGDriveFolder, GDriveFolder } from "./lib/gdrive";
 
 import { collection, onSnapshot, addDoc, query, orderBy } from "firebase/firestore";
@@ -198,6 +198,7 @@ export default function App() {
   const handleGoogleSignOut = async () => {
     try {
       await googleSignOut();
+      clearGDriveToken();
       setGdriveUserEmail(null);
       setGdriveFolders([]);
       localStorage.removeItem("gdrive_user_email");

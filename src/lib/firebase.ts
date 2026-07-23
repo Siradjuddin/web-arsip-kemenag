@@ -83,10 +83,14 @@ export const getAccessToken = (): string | null => {
   return cachedAccessToken;
 };
 
-export const logout = async () => {
+export const clearGDriveToken = () => {
   cachedAccessToken = null;
   sessionStorage.removeItem("gdrive_access_token");
   localStorage.removeItem("gdrive_access_token");
+};
+
+export const logout = async () => {
+  clearGDriveToken();
   localStorage.removeItem("gdrive_user_email");
   await auth.signOut();
 };
