@@ -56,9 +56,10 @@ export default function UploadModal({
     setIsConnectingDrive(true);
     try {
       const res = await googleSignIn();
-      if (res) {
+      if (res && res.user) {
         setGdriveEmail(res.user.email);
         localStorage.setItem("gdrive_user_email", res.user.email || "");
+        alert("Google Drive berhasil terhubung dengan akun: " + res.user.email);
       }
     } catch (err: any) {
       console.error("Gdrive login error:", err);
@@ -143,12 +144,12 @@ export default function UploadModal({
       });
     };
 
-    await pushLog("Menginisiasi unggahan arsip...", 100);
-    await pushLog(`Mencari akun pegawai: ${employee.name} (NIP: ${employee.nip})`, 300);
+    await pushLog("Menginisiasi proses digitalisasi arsip...", 100);
+    await pushLog(`Pegawai: ${employee.name} (NIP: ${employee.nip})`, 250);
 
     if (!isOnline) {
-      await pushLog("Peringatan: Deteksi luring (Offline Mode) aktif.", 300);
-      const offlinePayload = {
+      await pushLog("Mode Luring (Offline) terdeteksi. Menyimpan ke antrean lokal...", 300);
+      queueOfflineUpload({
         name: fileName,
         category,
         fileSize,
@@ -157,8 +158,7 @@ export default function UploadModal({
         type: docType,
         description: description,
         timestamp: new Date().toISOString()
-      };
-      queueOfflineUpload(offlinePayload);
+      });
       setUploadState("success");
       setTimeout(() => {
         onUploadSuccess(null);
@@ -167,8 +167,6 @@ export default function UploadModal({
       return;
     }
 
-    await pushLog("Menghubungkan ke Google Drive Cloud Kemenag...", 200);
-    
     const periodInfo = getPreviousMonthFolderInfo();
     const autoFormattedFileName = formatArchiveFileName(
       docType,
@@ -178,8 +176,8 @@ export default function UploadModal({
       selectedFile ? selectedFile.name : (fileName || `${docType}_${employee.nip}.pdf`)
     );
 
-    await pushLog(`Periode Laporan: ${periodInfo.folderName}`, 250);
-    await pushLog(`Format Nama Berkas: '${autoFormattedFileName}'`, 250);
+    await pushLog(`Periode Laporan: ${periodInfo.folderName}`, 200);
+    await pushLog(`Nama Berkas Otomatis: '${autoFormattedFileName}'`, 200);
     
     const customRootFolderId = localStorage.getItem("gdrive_custom_folder_id") || localStorage.getItem("gdrive_folder_id") || "";
     
@@ -196,18 +194,19 @@ export default function UploadModal({
     let realGDriveId: string | undefined = undefined;
     let accessToken = getAccessToken();
 
-    // Jika accessToken kosong, coba minta sign-in otomatis atau gunakan token cadangan
+    // Jika accessToken belum ada, coba minta login otomatis
     if (!accessToken) {
+      await pushLog("Token Google Drive belum aktif. Meminta izin otorisasi...", 300);
       try {
-        await pushLog("Meminta otorisasi ulang token Google Drive...", 300);
-        const signInRes = await googleSignIn();
-        if (signInRes && signInRes.accessToken) {
-          accessToken = signInRes.accessToken;
-          setGdriveEmail(signInRes.user.email);
-          localStorage.setItem("gdrive_user_email", signInRes.user.email || "");
+        const authRes = await googleSignIn();
+        if (authRes && authRes.accessToken) {
+          accessToken = authRes.accessToken;
+          setGdriveEmail(authRes.user.email);
+          localStorage.setItem("gdrive_user_email", authRes.user.email || "");
+          await pushLog("Otorisasi Google Drive berhasil diberikan!", 300);
         }
-      } catch (authErr) {
-        console.warn("Auto sign-in notice:", authErr);
+      } catch (authErr: any) {
+        await pushLog(`Peringatan Otentikasi: ${authErr.message || authErr}`, 300);
       }
     }
 
@@ -216,29 +215,27 @@ export default function UploadModal({
 
     if (accessToken) {
       try {
-        await pushLog(`Menyiapkan Folder Struktur di Google Drive...`, 200);
+        await pushLog("Menyiapkan struktur folder bersarang di Google Drive...", 300);
         const rootFolderObj = await getOrCreateGDriveFolder(accessToken, "Digitalisasi_Kemenag_Mempawah", customRootFolderId || undefined);
         const monthlyFolderObj = await getOrCreateGDriveFolder(accessToken, periodInfo.folderName, rootFolderObj.id);
         const categoryFolderObj = await getOrCreateGDriveFolder(accessToken, docSubfolderName, monthlyFolderObj.id);
         targetFolderId = categoryFolderObj.id;
-        await pushLog(`Direktori Google Drive siap.`, 300);
-      } catch (fErr: any) {
-        console.warn("Folder creation error:", fErr);
-        await pushLog(`Menggunakan direktori utama Google Drive...`, 200);
+        await pushLog(`Struktur Folder Google Drive Siap: /Digitalisasi_Kemenag_Mempawah/${periodInfo.folderName}/${docSubfolderName}`, 300);
+      } catch (folderErr: any) {
+        await pushLog(`Peringatan Struktur Folder: ${folderErr.message || folderErr}. Menggunakan direktori utama...`, 200);
       }
-    }
 
-    const fileToUpload = selectedFile
-      ? new File([selectedFile], autoFormattedFileName, { type: selectedFile.type })
-      : new File(
-          [`ARSIP DIGITAL KEMENAG MEMPAWAH\nNama: ${employee.name}\nNIP: ${employee.nip}\nTipe: ${docType}`],
-          autoFormattedFileName,
-          { type: category === "PDF" ? "application/pdf" : "text/plain" }
-        );
+      // Siapkan file fisik
+      const fileToUpload = selectedFile
+        ? new File([selectedFile], autoFormattedFileName, { type: selectedFile.type })
+        : new File(
+            [`ARSIP DIGITAL KEMENAG MEMPAWAH\n===============================\nNama: ${employee.name}\nNIP: ${employee.nip}\nJabatan: ${employee.position}\nTipe: ${docType}\nPeriode: ${periodInfo.folderName}\nDeskripsi: ${description || '-'}`],
+            autoFormattedFileName,
+            { type: category === "PDF" ? "application/pdf" : "text/plain" }
+          );
 
-    if (accessToken) {
-      await pushLog(`Mengunggah berkas fisik ke Google Drive...`, 300);
       try {
+        await pushLog(`Mengunggah berkas fisik '${autoFormattedFileName}' ke Google Drive...`, 400);
         const parents = targetFolderId ? [targetFolderId] : [];
         const uploadResult = await uploadToGDrive(accessToken, fileToUpload, {
           name: autoFormattedFileName,
@@ -246,42 +243,17 @@ export default function UploadModal({
           description: metaStr
         });
         realGDriveId = uploadResult.id;
-        await pushLog(`Google Drive API Berhasil! ID: ${realGDriveId}`, 400);
+        await pushLog(`SUKSES! Berkas fisik tersimpan di Google Drive. ID: ${realGDriveId}`, 500);
       } catch (uploadErr: any) {
-        console.error("Gdrive upload error:", uploadErr);
-        await pushLog(`Gagal unggah ke Drive (${uploadErr.message || uploadErr}). Melanjutkan ke database...`, 300);
+        console.error("Gdrive upload detail error:", uploadErr);
+        await pushLog(`GAGAL UPLOAD GDRIVE: ${uploadErr.message || uploadErr}`, 400);
       }
     } else {
-      await pushLog(`Perhatian: Akses Google Drive belum diotorisasi. Berkas dicatat ke database.`, 300);
+      await pushLog("PERINGATAN: Sesi Google Drive belum terhubung. Berkas dicatat di database lokal.", 300);
     }
 
-    // Daftarkan ke server/API lama agar simulasi awal berjalan sempurna
-    try {
-      const res = await fetch("/api/arsip/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: autoFormattedFileName,
-          category,
-          fileSize,
-          uploadedBy: employee.name,
-          nip: employee.nip,
-          type: docType,
-          description: description,
-          gdriveId: realGDriveId || "local-sync"
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.file?.gdriveId) realGDriveId = data.file.gdriveId;
-      }
-    } catch (apiErr) {
-      // Abaikan jika endpoint server statis tidak aktif, karena kita sudah backup dengan Firestore di bawah
-    }
+    await pushLog("Menyimpan riwayat permanen ke Cloud Firestore database...", 300);
 
-    await pushLog(`Mendaftarkan riwayat digitalisasi arsip ke database Kemenag Mempawah...`, 300);
-
-    // Simpan permanen ke Cloud Firestore agar statistik tidak reset ke 0
     try {
       await addDoc(collection(db, "archives"), {
         name: autoFormattedFileName,
@@ -294,22 +266,24 @@ export default function UploadModal({
         gdriveId: realGDriveId || "local-sync",
         timestamp: new Date().toISOString()
       });
-      await pushLog("Penyimpanan Terpusat Berhasil! File tersimpan di Cloud Arsiparis.", 300);
-    } catch (dbErr) {
-      console.error("Firestore error:", dbErr);
-    }
 
-    setUploadState("success");
-    onUploadSuccess({
-      name: autoFormattedFileName,
-      category,
-      fileSize,
-      uploadedBy: employee.name,
-      nip: employee.nip,
-      type: docType,
-      description,
-      gdriveId: realGDriveId || "local-sync"
-    });
+      await pushLog("Penyimpanan Terpusat Berhasil Sepenuhnya!", 300);
+      setUploadState("success");
+      onUploadSuccess({
+        name: autoFormattedFileName,
+        category,
+        fileSize,
+        uploadedBy: employee.name,
+        nip: employee.nip,
+        type: docType,
+        description,
+        gdriveId: realGDriveId || "local-sync"
+      });
+    } catch (dbError: any) {
+      console.error("Firestore error:", dbError);
+      await pushLog(`Gagal menyimpan ke database: ${dbError.message || dbError}`, 300);
+      setUploadState("error");
+    }
   };
 
   return (
@@ -357,7 +331,7 @@ export default function UploadModal({
                       </div>
                       <span className="text-[11px] text-emerald-700 dark:text-emerald-300 block mt-0.5">
                         {gdriveEmail || getAccessToken()
-                          ? `Status: Terhubung (${gdriveEmail || "Google Drive Admin Active"})`
+                          ? `Status: Terhubung (${gdriveEmail || "Google Drive Active"})`
                           : "Sistem pengarsipan otomatis terhubung & tersimpan secara terstruktur"}
                       </span>
                     </div>
