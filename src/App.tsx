@@ -182,6 +182,7 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     try {
+      clearGDriveToken();
       const res = await googleSignIn();
       if (res) {
         setGdriveUserEmail(res.user.email);
@@ -400,6 +401,9 @@ export default function App() {
   const handleLogout = useCallback(() => {
     setLoggedInEmployee(null);
     localStorage.removeItem("kemenag_logged_in_employee");
+    clearGDriveToken();
+    setGdriveUserEmail(null);
+    setGdriveFolders([]);
     setShowInactivityWarning(false);
     handleTriggerFcm("Sesi Berakhir", "Sesi Anda telah ditutup secara aman.", "info");
   }, [handleTriggerFcm]);

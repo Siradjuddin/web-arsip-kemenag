@@ -15,6 +15,8 @@ provider.addScope("https://www.googleapis.com/auth/drive.metadata.readonly");
 // Memaksa Google memunculkan ulang dialog persetujuan dan pemilihan akun
 provider.setCustomParameters({
   prompt: "consent select_account",
+  access_type: "offline",
+  include_granted_scopes: "true",
 });
 
 let isSigningIn = false;
@@ -47,6 +49,7 @@ export const initAuth = (
 // Must be called from a button click or user interaction
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
+    clearGDriveToken();
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);

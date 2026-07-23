@@ -72,10 +72,12 @@ export default function UploadModal({
     setIsConnectingDrive(true);
     setDriveError(null);
     try {
+      clearGDriveToken();
       const res = await googleSignIn();
       if (res && res.user) {
         const email = res.user.email || "";
         const token = res.accessToken || "";
+        await verifyDriveAccess(token);
         localStorage.setItem("gdrive_user_email", email);
         localStorage.setItem("gdrive_access_token", token);
         setDriveUserEmail(email);
@@ -84,12 +86,24 @@ export default function UploadModal({
       }
     } catch (err: any) {
       console.error("Gdrive login error:", err);
+      clearGDriveToken();
+      setDriveUserEmail(null);
+      setDriveAccessToken(null);
       const message = err?.message || String(err) || "Terjadi kesalahan saat menghubungkan Google Drive.";
       setDriveError(message);
       alert(`Gagal menghubungkan Google Drive: ${message}`);
     } finally {
       setIsConnectingDrive(false);
     }
+  };
+
+  const ensureDriveConnection = async () => {
+    const currentToken = getAccessToken() || localStorage.getItem("gdrive_access_token");
+    if (currentToken) {
+      return currentToken;
+    }
+    await handleConnectDrive();
+    return getAccessToken() || localStorage.getItem("gdrive_access_token");
   };
 
   const verifyDriveAccess = async (token: string) => {
@@ -252,13 +266,42 @@ export default function UploadModal({
       } catch (verifyErr: any) {
         console.error("Gdrive verify error:", verifyErr);
         const errMessage = verifyErr?.message || String(verifyErr) || "Token Google Drive tidak valid.";
-        clearGDriveToken();
-        setDriveUserEmail(null);
-        setDriveAccessToken(null);
-        setDriveError("Token Google Drive tidak valid atau sudah kedaluwarsa. Silakan hubungkan ulang akun admin.");
-        await pushLog(`Verifikasi token gagal: ${errMessage}`, 300);
-        setUploadState("error");
-        return;
+
+        if (isAdmin) {
+          await pushLog("Token Drive kadaluarsa, mencoba koneksi ulang akun admin...", 300);
+          await handleConnectDrive();
+          accessToken = getAccessToken() || localStorage.getItem("gdrive_access_token");
+          if (accessToken) {
+            try {
+              await verifyDriveAccess(accessToken);
+            } catch (retryErr: any) {
+              console.error("Retry verify error:", retryErr);
+              clearGDriveToken();
+              setDriveUserEmail(null);
+              setDriveAccessToken(null);
+              setDriveError("Token Google Drive tidak valid atau sudah kedaluwarsa. Silakan hubungkan ulang akun admin.");
+              await pushLog(`Retry verifikasi token gagal: ${retryErr?.message || String(retryErr)}`, 300);
+              setUploadState("error");
+              return;
+            }
+          } else {
+            clearGDriveToken();
+            setDriveUserEmail(null);
+            setDriveAccessToken(null);
+            setDriveError("Token Google Drive tidak valid atau sudah kedaluwarsa. Silakan hubungkan ulang akun admin.");
+            await pushLog(`Verifikasi token gagal: ${errMessage}`, 300);
+            setUploadState("error");
+            return;
+          }
+        } else {
+          clearGDriveToken();
+          setDriveUserEmail(null);
+          setDriveAccessToken(null);
+          setDriveError("Token Google Drive tidak valid atau sudah kedaluwarsa. Silakan hubungkan ulang akun admin.");
+          await pushLog(`Verifikasi token gagal: ${errMessage}`, 300);
+          setUploadState("error");
+          return;
+        }
       }
 
       if (parentFolderId) {
