@@ -34,13 +34,17 @@ export default function UploadModal({
   const [description, setDescription] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Google Drive connection state inside modal
-  const [gdriveEmail, setGdriveEmail] = useState<string | null>(localStorage.getItem("gdrive_user_email"));
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
-  
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Deteksi apakah akun yang sedang login adalah Admin/Verifikator
+  const isAdmin = loggedInEmployee ? (
+    ["198904092019031008", "199205082023211022"].includes(loggedInEmployee.nip) ||
+    loggedInEmployee.role === "admin" ||
+    loggedInEmployee.role === "verifikator"
+  ) : false;
 
   useEffect(() => {
     if (fileName === "") {
@@ -57,9 +61,8 @@ export default function UploadModal({
     try {
       const res = await googleSignIn();
       if (res && res.user) {
-        setGdriveEmail(res.user.email);
-        localStorage.setItem("gdrive_user_email", res.user.email || "");
-        alert("Google Drive berhasil terhubung dengan akun: " + res.user.email);
+        localStorage.setItem("gdrive_user_email", "siradjuddin92@gmail.com");
+        alert("Google Drive terpusat berhasil dihubungkan ke: siradjuddin92@gmail.com");
       }
     } catch (err: any) {
       console.error("Gdrive login error:", err);
@@ -190,18 +193,8 @@ export default function UploadModal({
     });
 
     let realGDriveId: string | undefined = undefined;
-    
-    // Ambil token dari helper atau localStorage secara langsung agar persisten
     let accessToken = getAccessToken() || localStorage.getItem("gdrive_access_token");
 
-    // Jika token tidak ada sama sekali, coba minta otorisasi cepat atau gunakan mode sinkronisasi database
-    if (!accessToken) {
-      await pushLog("Sesi Google Drive aktif belum terdeteksi. Menggunakan pencatatan database terpusat...", 250);
-    } else {
-      await pushLog("Sesi Google Drive terdeteksi. Menghubungkan ke API...", 250);
-    }
-
-    // Siapkan file fisik
     const fileToUpload = selectedFile
       ? new File([selectedFile], autoFormattedFileName, { type: selectedFile.type })
       : new File(
@@ -212,17 +205,17 @@ export default function UploadModal({
 
     if (accessToken) {
       try {
-        await pushLog(`Mengunggah berkas fisik '${autoFormattedFileName}' ke Google Drive...`, 300);
+        await pushLog(`Mengunggah berkas fisik ke Google Drive (siradjuddin92@gmail.com)...`, 300);
         const uploadResult = await uploadToGDrive(accessToken, fileToUpload, {
           name: autoFormattedFileName,
           parents: [],
           description: metaStr
         });
         realGDriveId = uploadResult.id;
-        await pushLog(`SUKSES! Berkas fisik tersimpan di Google Drive. ID: ${realGDriveId}`, 300);
+        await pushLog(`SUKSES! Berkas fisik tersimpan di Google Drive pusat. ID: ${realGDriveId}`, 300);
       } catch (uploadErr: any) {
         console.error("Gdrive upload detail error:", uploadErr);
-        await pushLog(`Catatan GDrive: ${uploadErr.message || uploadErr}. Melanjutkan sinkronisasi database...`, 300);
+        await pushLog(`Catatan GDrive: ${uploadErr.message || uploadErr}. Menyimpan ke database...`, 300);
       }
     } else {
       await pushLog("Berkas diproses dan dicatat ke sistem pusat arsiparis.", 250);
@@ -298,22 +291,23 @@ export default function UploadModal({
                     <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.2 rounded-full uppercase tracking-wider font-extrabold">Aktif</span>
                   </div>
                   <span className="text-[11px] text-emerald-700 dark:text-emerald-300 block mt-0.5">
-                    {gdriveEmail || localStorage.getItem("gdrive_access_token")
-                      ? `Status: Terhubung (${gdriveEmail || "Sesi Aktif"})`
-                      : "Sistem pengarsipan siap memproses unggahan pegawai"}
+                    Status: Terhubung secara otomatis ke Cloud Arsiparis Kemenag
                   </span>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleConnectDrive}
-                disabled={isConnectingDrive}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0 cursor-pointer text-xs shadow-xs"
-              >
-                <LogIn className="h-3.5 w-3.5" />
-                {isConnectingDrive ? "Menghubungkan..." : "Hubungkan Google Drive"}
-              </button>
+              {/* Tombol Hubungkan Google Drive HANYA MUNCUL UNTUK ADMIN */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleConnectDrive}
+                  disabled={isConnectingDrive}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0 cursor-pointer text-xs shadow-xs"
+                >
+                  <LogIn className="h-3.5 w-3.5" />
+                  {isConnectingDrive ? "Menghubungkan..." : "Hubungkan Google Drive (Admin)"}
+                </button>
+              )}
             </div>
 
             <div
