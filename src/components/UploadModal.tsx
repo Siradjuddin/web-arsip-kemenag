@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { X, Upload, FileText, CheckCircle2, Cloud, AlertCircle, RefreshCw, Layers, Link as LinkIcon, LogIn, MessageSquare, Send, ExternalLink } from "lucide-react";
 import { Employee, FileCategory, DocType } from "../types";
-import { getAccessToken, googleSignIn } from "../lib/firebase";
+import { collection, addDoc } from "firebase/firestore";
+import { getAccessToken, googleSignIn, db } from "../lib/firebase";
 import { uploadToGDrive, getPreviousMonthFolderInfo, formatArchiveFileName, getOrCreateGDriveFolder, getDocTypeSubfolderName } from "../lib/gdrive";
 import { ADMIN_WA_CONTACTS, createUploadWaMessage, openWhatsApp } from "../lib/whatsapp";
 
@@ -277,33 +278,26 @@ export default function UploadModal({
     }
     
     try {
-      const res = await fetch("/api/arsip/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+// Simpan langsung ke database Cloud Firestore yang permanen
+      try {
+        await addDoc(collection(db, "archives"), {
           name: autoFormattedFileName,
-          category,
-          fileSize,
+          category: category,
+          fileSize: fileSize,
           uploadedBy: employee.name,
           nip: employee.nip,
           type: docType,
           description: description,
-          gdriveId: realGDriveId
-        })
-      });
+          gdriveId: realGDriveId || "local-sync",
+          timestamp: new Date().toISOString()
+        });
 
-      if (!res.ok) throw new Error("Gagal mengunggah berkas ke server.");
-      const data = await res.json();
-      
-      await pushLog(`Konfirmasi ID Berkas Cloud Arsiparis: ${data.file.gdriveId}`, 300);
-      await pushLog("Mendaftarkan riwayat digitalisasi arsip ke database Kemenag Mempawah...", 300);
-      await pushLog("Penyimpanan Terpusat Berhasil! File tersimpan di Cloud Arsiparis.", 300);
-
-      setUploadState("success");
-      onUploadSuccess(data.file);
-    } catch (err) {
-      await pushLog("Kesalahan: Terjadi kegagalan komunikasi server.", 200);
-      setUploadState("error");
+        await pushLog(`Berhasil mencatat riwayat ke Cloud Firestore database!`, 300);
+        await pushLog("Penyimpanan Terpusat Berhasil! File tersimpan aman dan tidak akan reset.", 300);
+      } catch (dbError) {
+        console.error("Gagal simpan ke Firestore:", dbError);
+        await pushLog("Peringatan: Gagal menyinkronkan ke database cloud.", 300);
+      }
     }
   };
 
