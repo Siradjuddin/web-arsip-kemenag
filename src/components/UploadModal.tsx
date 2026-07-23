@@ -3,7 +3,7 @@ import { X, Upload, FileText, CheckCircle2, Cloud, AlertCircle, RefreshCw, Layer
 import { Employee, FileCategory, DocType } from "../types";
 import { collection, addDoc } from "firebase/firestore";
 import { getAccessToken, googleSignIn, db } from "../lib/firebase";
-import { uploadToGDrive, getPreviousMonthFolderInfo, formatArchiveFileName } from "../lib/gdrive";
+import { uploadToGDrive, verifyGDriveFolder, getPreviousMonthFolderInfo, formatArchiveFileName } from "../lib/gdrive";
 import { ADMIN_WA_CONTACTS, createUploadWaMessage, openWhatsApp } from "../lib/whatsapp";
 
 interface UploadModalProps {
@@ -92,6 +92,23 @@ export default function UploadModal({
     }
   };
 
+  const verifyDriveAccess = async (token: string) => {
+    const response = await fetch(
+      "https://www.googleapis.com/drive/v3/about?fields=user&supportsAllDrives=true",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Verifikasi Google Drive gagal (${response.status}): ${errText}`);
+    }
+  };
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -156,12 +173,13 @@ export default function UploadModal({
     if (!employee) return;
 
     setUploadState("uploading");
+    setDriveError(null);
     setSyncLogs([]);
 
     const pushLog = (msg: string, delay: number) => {
       return new Promise<void>((resolve) => {
         setTimeout(() => {
-          setSyncLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+          setSyncLogs((prev: string[]) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
           resolve();
         }, delay);
       });
@@ -199,8 +217,16 @@ export default function UploadModal({
       selectedFile ? selectedFile.name : (fileName || `${docType}_${employee.nip}.pdf`)
     );
 
+    let realGDriveId: string | undefined = undefined;
+    const parentFolderId =
+      localStorage.getItem("gdrive_custom_folder_id") ||
+      localStorage.getItem("gdrive_folder_id") ||
+      undefined;
+    let accessToken = driveAccessToken || getAccessToken() || localStorage.getItem("gdrive_access_token");
+
     await pushLog(`Periode Laporan: ${periodInfo.folderName}`, 200);
     await pushLog(`Nama Berkas Otomatis: '${autoFormattedFileName}'`, 200);
+    await pushLog(`Folder target Google Drive: ${parentFolderId || "(root/default)"}`, 200);
 
     const metaStr = JSON.stringify({
       NIP: employee.nip,
@@ -212,13 +238,6 @@ export default function UploadModal({
       Instansi: "Kemenag Mempawah",
     });
 
-    let realGDriveId: string | undefined = undefined;
-    const parentFolderId =
-      localStorage.getItem("gdrive_custom_folder_id") ||
-      localStorage.getItem("gdrive_folder_id") ||
-      undefined;
-    let accessToken = driveAccessToken || getAccessToken() || localStorage.getItem("gdrive_access_token");
-
     const fileToUpload = selectedFile
       ? new File([selectedFile], autoFormattedFileName, { type: selectedFile.type })
       : new File(
@@ -228,6 +247,34 @@ export default function UploadModal({
         );
 
     if (accessToken) {
+      try {
+        await verifyDriveAccess(accessToken);
+      } catch (verifyErr: any) {
+        console.error("Gdrive verify error:", verifyErr);
+        const errMessage = verifyErr?.message || String(verifyErr) || "Token Google Drive tidak valid.";
+        localStorage.removeItem("gdrive_access_token");
+        sessionStorage.removeItem("gdrive_access_token");
+        setDriveAccessToken(null);
+        setDriveError("Token Google Drive tidak valid atau sudah kedaluwarsa. Silakan hubungkan ulang akun admin.");
+        await pushLog(`Verifikasi token gagal: ${errMessage}`, 300);
+        setUploadState("error");
+        return;
+      }
+
+      if (parentFolderId) {
+        try {
+          const folderInfo = await verifyGDriveFolder(accessToken, parentFolderId);
+          await pushLog(`Folder target berhasil diverifikasi: ${folderInfo.name} (${folderInfo.id})`, 300);
+        } catch (folderErr: any) {
+          console.error("Gdrive folder verify error:", folderErr);
+          const errMessage = folderErr?.message || String(folderErr) || "Folder tidak dapat diakses.";
+          await pushLog(`Verifikasi folder gagal: ${errMessage}`, 300);
+          setDriveError(`Folder target Google Drive tidak dapat diakses. ${errMessage}`);
+          setUploadState("error");
+          return;
+        }
+      }
+
       try {
         const activeEmail = driveUserEmail || localStorage.getItem("gdrive_user_email") || "Akun Google Drive";
         await pushLog(`Mengunggah berkas fisik ke Google Drive pusat (${activeEmail})...`, 300);
@@ -496,6 +543,12 @@ export default function UploadModal({
                 Pastikan akun Google Drive terhubung dan berikan izin akses Drive. Silakan coba lagi atau hubungi admin jika masalah berlanjut.
               </p>
             </div>
+            {driveError && (
+              <div className="w-full rounded-xl border border-amber-300 bg-amber-50/80 p-3 text-left text-[11px] text-amber-900 dark:border-amber-700 dark:bg-amber-950/20 dark:text-amber-200">
+                <div className="font-semibold mb-1">Detail error:</div>
+                <div className="whitespace-pre-wrap">{driveError}</div>
+              </div>
+            )}
             <div className="w-full bg-slate-950 text-slate-100 p-4 rounded-xl font-mono text-xs text-left h-48 overflow-y-auto border border-slate-800 shadow-inner">
               {syncLogs.map((log, i) => (
                 <div key={i} className="mb-1 leading-relaxed whitespace-pre-wrap">

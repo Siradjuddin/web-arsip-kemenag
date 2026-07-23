@@ -8,13 +8,13 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 const provider = new GoogleAuthProvider();
-// Meminta izin penuh cakupan Google Drive untuk aplikasi web
-provider.addScope("https://www.googleapis.com/auth/drive.file");
+// Pakai cakupan Google Drive penuh untuk upload ke folder pusat dan folder khusus yang telah ditentukan
+provider.addScope("https://www.googleapis.com/auth/drive");
 provider.addScope("https://www.googleapis.com/auth/drive.metadata.readonly");
 
-// Memaksa Google memunculkan jendela pemilihan akun/izin ulang agar token selalu segar
+// Memaksa Google memunculkan ulang dialog persetujuan dan pemilihan akun
 provider.setCustomParameters({
-  prompt: "select_account",
+  prompt: "consent select_account",
 });
 
 let isSigningIn = false;

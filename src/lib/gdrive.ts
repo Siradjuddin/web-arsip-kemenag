@@ -148,6 +148,31 @@ export async function uploadToGDrive(
   return { id: data.id, name: data.name };
 }
 
+export async function verifyGDriveFolder(
+  accessToken: string,
+  folderId: string
+): Promise<{ id: string; name: string }> {
+  if (!accessToken) {
+    throw new Error("Token akses Google Drive kosong. Silakan hubungkan ulang Google Drive.");
+  }
+
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name&supportsAllDrives=true`;
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken.trim()}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Folder Google Drive tidak dapat diakses (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  return { id: data.id, name: data.name };
+}
+
 export async function listGDriveFolders(accessToken: string): Promise<GDriveFolder[]> {
   if (!accessToken) {
     throw new Error("Token akses Google Drive kosong. Silakan masuk ulang.");
