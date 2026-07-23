@@ -35,9 +35,21 @@ export default function UploadModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
+  const [driveUserEmail, setDriveUserEmail] = useState<string | null>(() => localStorage.getItem("gdrive_user_email"));
+  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(() => getAccessToken());
+  const [driveError, setDriveError] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isDriveConnected = Boolean(driveAccessToken);
+
+  useEffect(() => {
+    const storedEmail = localStorage.getItem("gdrive_user_email");
+    const storedToken = getAccessToken();
+    if (storedEmail) setDriveUserEmail(storedEmail);
+    if (storedToken) setDriveAccessToken(storedToken);
+  }, []);
 
   // KUNCI UTAMA: Hanya NIP spesifik pusat atau role admin sejati yang diizinkan melihat tombol koneksi GDrive
   const ADMIN_MASTER_NIPS = ["198904092019031008", "199205082023211022"];
@@ -58,15 +70,23 @@ export default function UploadModal({
 
   const handleConnectDrive = async () => {
     setIsConnectingDrive(true);
+    setDriveError(null);
     try {
       const res = await googleSignIn();
       if (res && res.user) {
-        localStorage.setItem("gdrive_user_email", "siradjuddin92@gmail.com");
-        alert("Google Drive terpusat berhasil dihubungkan ke: siradjuddin92@gmail.com");
+        const email = res.user.email || "";
+        const token = res.accessToken || "";
+        localStorage.setItem("gdrive_user_email", email);
+        localStorage.setItem("gdrive_access_token", token);
+        setDriveUserEmail(email);
+        setDriveAccessToken(token);
+        alert(`Google Drive terpusat berhasil dihubungkan ke: ${email}`);
       }
     } catch (err: any) {
       console.error("Gdrive login error:", err);
-      alert(`Gagal menghubungkan Google Drive: ${err.message || err}`);
+      const message = err?.message || String(err) || "Terjadi kesalahan saat menghubungkan Google Drive.";
+      setDriveError(message);
+      alert(`Gagal menghubungkan Google Drive: ${message}`);
     } finally {
       setIsConnectingDrive(false);
     }
@@ -193,7 +213,11 @@ export default function UploadModal({
     });
 
     let realGDriveId: string | undefined = undefined;
-    let accessToken = getAccessToken() || localStorage.getItem("gdrive_access_token");
+    const parentFolderId =
+      localStorage.getItem("gdrive_custom_folder_id") ||
+      localStorage.getItem("gdrive_folder_id") ||
+      undefined;
+    let accessToken = driveAccessToken || getAccessToken() || localStorage.getItem("gdrive_access_token");
 
     const fileToUpload = selectedFile
       ? new File([selectedFile], autoFormattedFileName, { type: selectedFile.type })
@@ -205,20 +229,32 @@ export default function UploadModal({
 
     if (accessToken) {
       try {
-        await pushLog(`Mengunggah berkas fisik ke Google Drive pusat (siradjuddin92@gmail.com)...`, 300);
+        const activeEmail = driveUserEmail || localStorage.getItem("gdrive_user_email") || "Akun Google Drive";
+        await pushLog(`Mengunggah berkas fisik ke Google Drive pusat (${activeEmail})...`, 300);
         const uploadResult = await uploadToGDrive(accessToken, fileToUpload, {
           name: autoFormattedFileName,
-          parents: [],
-          description: metaStr
+          parents: parentFolderId ? [parentFolderId] : [],
+          description: metaStr,
         });
         realGDriveId = uploadResult.id;
         await pushLog(`SUKSES! Berkas fisik tersimpan di Google Drive pusat. ID: ${realGDriveId}`, 300);
       } catch (uploadErr: any) {
         console.error("Gdrive upload detail error:", uploadErr);
-        await pushLog(`Catatan GDrive: ${uploadErr.message || uploadErr}. Menyimpan ke database...`, 300);
+        const errMessage = uploadErr?.message || String(uploadErr) || "Unknown error";
+        await pushLog(`Catatan GDrive: ${errMessage}. Proses dihentikan.`, 300);
+        if (/401|403/.test(errMessage)) {
+          localStorage.removeItem("gdrive_access_token");
+          sessionStorage.removeItem("gdrive_access_token");
+          setDriveAccessToken(null);
+          setDriveError("Token Google Drive kedaluwarsa atau tidak valid. Silakan hubungkan ulang akun admin.");
+        } else {
+          setDriveError(errMessage);
+        }
+        setUploadState("error");
+        return;
       }
     } else {
-      await pushLog("Berkas diproses dan dicatat ke sistem pusat arsiparis.", 250);
+      await pushLog("Google Drive belum terhubung. Data akan tetap dicatat, tetapi tidak akan diunggah ke Drive.", 250);
     }
 
     await pushLog("Menyimpan riwayat permanen ke Cloud Firestore database...", 300);
@@ -288,11 +324,23 @@ export default function UploadModal({
                 <div>
                   <div className="flex items-center gap-1.5 font-bold">
                     <span>Penyimpanan Terpusat di Cloud Arsiparis</span>
-                    <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.2 rounded-full uppercase tracking-wider font-extrabold">Aktif</span>
+                    <span className={`text-white text-[9px] px-1.5 py-0.2 rounded-full uppercase tracking-wider font-extrabold ${isDriveConnected ? "bg-emerald-600" : "bg-amber-600"}`}>
+                      {isDriveConnected ? "Aktif" : "Tidak Terhubung"}
+                    </span>
                   </div>
                   <span className="text-[11px] text-emerald-700 dark:text-emerald-300 block mt-0.5">
-                    {isAdmin ? "Status: Akses Kelola Terhubung (siradjuddin92@gmail.com)" : "Status: Terhubung secara otomatis ke Cloud Arsiparis Kemenag"}
+                    {isDriveConnected
+                      ? `Status: Terhubung sebagai ${driveUserEmail || "Akun Google Drive"}`
+                      : isAdmin
+                      ? "Status: Google Drive belum terhubung. Silakan hubungkan akun admin."
+                      : "Status: Google Drive tidak tersambung. Gunakan akun admin yang terhubung terlebih dahulu."}
                   </span>
+                  {driveError && (
+                    <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50/80 p-3 text-[11px] text-amber-900 dark:border-amber-700 dark:bg-amber-950/20 dark:text-amber-200">
+                      <div className="font-semibold mb-1">Masalah Google Drive:</div>
+                      <div className="whitespace-pre-wrap text-[11px]">{driveError}</div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -436,6 +484,32 @@ export default function UploadModal({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {uploadState === "error" && (
+          <div className="py-6 flex flex-col items-center justify-center gap-4 text-center">
+            <AlertCircle className="h-10 w-10 text-amber-500" />
+            <div>
+              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm mb-2">Terjadi kesalahan saat upload Google Drive</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Pastikan akun Google Drive terhubung dan berikan izin akses Drive. Silakan coba lagi atau hubungi admin jika masalah berlanjut.
+              </p>
+            </div>
+            <div className="w-full bg-slate-950 text-slate-100 p-4 rounded-xl font-mono text-xs text-left h-48 overflow-y-auto border border-slate-800 shadow-inner">
+              {syncLogs.map((log, i) => (
+                <div key={i} className="mb-1 leading-relaxed whitespace-pre-wrap">
+                  <span className="text-amber-400">{"> "}</span>
+                  {log}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setUploadState("idle")}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-bold"
+            >
+              Tutup dan Coba Lagi
+            </button>
           </div>
         )}
 

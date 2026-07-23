@@ -62,7 +62,35 @@ export async function getOrCreateGDriveFolder(
   folderName: string,
   parentFolderId?: string
 ): Promise<GDriveFolder> {
-  return { id: "", name: folderName };
+  if (!accessToken) {
+    throw new Error("Token akses Google Drive kosong. Silakan masuk ulang.");
+  }
+
+  const body: any = {
+    name: folderName,
+    mimeType: "application/vnd.google-apps.folder",
+  };
+
+  if (parentFolderId) {
+    body.parents = [parentFolderId];
+  }
+
+  const response = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gagal membuat folder Google Drive (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  return { id: data.id, name: data.name };
 }
 
 export async function uploadToGDrive(
@@ -74,75 +102,108 @@ export async function uploadToGDrive(
     throw new Error("Token akses Google Drive kosong. Silakan hubungkan ulang Google Drive.");
   }
 
-  const boundary = "3d9f10a7bc2a5";
-  const delimiter = `\r\n--${boundary}\r\n`;
+  const boundary = "-------314159265358979323846";
+  const contentType = file.type || "application/octet-stream";
+  const cleanMetadata: { name: string; description?: string; parents?: string[] } = {
+    name: metadata.name,
+  };
+
+  if (metadata.description) {
+    cleanMetadata.description = metadata.description;
+  }
+
+  if (metadata.parents?.length) {
+    cleanMetadata.parents = metadata.parents;
+  }
+
+  const metadataPart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(cleanMetadata)}\r\n`;
+  const fileHeader = `--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`;
   const closeDelimiter = `\r\n--${boundary}--`;
 
-  const reader = new FileReader();
+  const body = new Blob([
+    metadataPart,
+    fileHeader,
+    file,
+    closeDelimiter,
+  ]);
 
-  return new Promise<{ id: string; name: string }>((resolve, reject) => {
-    reader.onload = async () => {
-      try {
-        const contentType = file.type || "application/octet-stream";
-        // Tanpa parents agar diunggah langsung ke direktori utama (Root) menghindari 403
-        const cleanMetadata = {
-          name: metadata.name,
-          description: metadata.description
-        };
-        const metadataPart = JSON.stringify(cleanMetadata);
+  const response = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name&supportsAllDrives=true",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken.trim()}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    }
+  );
 
-        const bytes = new Uint8Array(reader.result as ArrayBuffer);
-        let binary = "";
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        const base64Data = btoa(binary);
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Google Drive upload rejected (${response.status}): ${errText}`);
+  }
 
-        const body =
-          delimiter +
-          "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-          metadataPart +
-          delimiter +
-          "Content-Type: " + contentType + "\r\n" +
-          "Content-Transfer-Encoding: base64\r\n\r\n" +
-          base64Data +
-          closeDelimiter;
-
-        const response = await fetch(
-          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken.trim()}`,
-              "Content-Type": `multipart/related; boundary=${boundary}`,
-            },
-            body: body,
-          }
-        );
-
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`Google Drive upload rejected (${response.status}): ${errText}`);
-        }
-
-        const data = await response.json();
-        resolve({ id: data.id, name: data.name });
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.onerror = () => reject(reader.error || new Error("Gagal membaca berkas file lokal."));
-    reader.readAsArrayBuffer(file);
-  });
+  const data = await response.json();
+  return { id: data.id, name: data.name };
 }
 
 export async function listGDriveFolders(accessToken: string): Promise<GDriveFolder[]> {
-  return [];
+  if (!accessToken) {
+    throw new Error("Token akses Google Drive kosong. Silakan masuk ulang.");
+  }
+
+  const query = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=200&supportsAllDrives=true`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken.trim()}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gagal mengambil folder Google Drive (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  return (data.files || []).map((file: any) => ({ id: file.id, name: file.name }));
 }
 
 export async function createGDriveFolder(
   accessToken: string,
-  folderName: string
+  folderName: string,
+  parentFolderId?: string
 ): Promise<GDriveFolder> {
-  return { id: "", name: folderName };
+  if (!accessToken) {
+    throw new Error("Token akses Google Drive kosong. Silakan masuk ulang.");
+  }
+
+  const body: any = {
+    name: folderName,
+    mimeType: "application/vnd.google-apps.folder",
+  };
+
+  if (parentFolderId) {
+    body.parents = [parentFolderId];
+  }
+
+  const response = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gagal membuat folder Google Drive (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  return { id: data.id, name: data.name };
 }
