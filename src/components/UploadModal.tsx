@@ -39,11 +39,11 @@ export default function UploadModal({
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Deteksi apakah akun yang sedang login adalah Admin/Verifikator
+  // KUNCI UTAMA: Hanya NIP spesifik pusat atau role admin sejati yang diizinkan melihat tombol koneksi GDrive
+  const ADMIN_MASTER_NIPS = ["198904092019031008", "199205082023211022"];
   const isAdmin = loggedInEmployee ? (
-    ["198904092019031008", "199205082023211022"].includes(loggedInEmployee.nip) ||
-    loggedInEmployee.role === "admin" ||
-    loggedInEmployee.role === "verifikator"
+    ADMIN_MASTER_NIPS.includes(loggedInEmployee.nip) && 
+    (loggedInEmployee.role === "admin" || loggedInEmployee.role === "verifikator")
   ) : false;
 
   useEffect(() => {
@@ -205,7 +205,7 @@ export default function UploadModal({
 
     if (accessToken) {
       try {
-        await pushLog(`Mengunggah berkas fisik ke Google Drive (siradjuddin92@gmail.com)...`, 300);
+        await pushLog(`Mengunggah berkas fisik ke Google Drive pusat (siradjuddin92@gmail.com)...`, 300);
         const uploadResult = await uploadToGDrive(accessToken, fileToUpload, {
           name: autoFormattedFileName,
           parents: [],
@@ -291,12 +291,12 @@ export default function UploadModal({
                     <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.2 rounded-full uppercase tracking-wider font-extrabold">Aktif</span>
                   </div>
                   <span className="text-[11px] text-emerald-700 dark:text-emerald-300 block mt-0.5">
-                    Status: Terhubung secara otomatis ke Cloud Arsiparis Kemenag
+                    {isAdmin ? "Status: Akses Kelola Terhubung (siradjuddin92@gmail.com)" : "Status: Terhubung secara otomatis ke Cloud Arsiparis Kemenag"}
                   </span>
                 </div>
               </div>
 
-              {/* Tombol Hubungkan Google Drive HANYA MUNCUL UNTUK ADMIN */}
+              {/* Tombol Hubungkan Google Drive HANYA MUNCUL JIKA BENAR-BENAR ADMIN */}
               {isAdmin && (
                 <button
                   type="button"
