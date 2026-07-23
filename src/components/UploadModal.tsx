@@ -213,7 +213,6 @@ export default function UploadModal({
     let targetFolderId = customRootFolderId;
 
     // 2. Prepare 3-tier nested Google Drive folder structure:
-    //    Root Folder ("Digitalisasi_Kemenag_Mempawah") -> Monthly Folder ("JUNI 2026") -> Subfolder ("LKH" / "LKB" / "Arsip_Lainnya")
     const docSubfolderName = getDocTypeSubfolderName(docType);
 
     if (accessToken) {
@@ -271,33 +270,43 @@ export default function UploadModal({
         await pushLog(`Google Drive API: Berkas '${autoFormattedFileName}' berhasil tersimpan! ID: ${realGDriveId}`, 400);
       } catch (uploadErr: any) {
         console.error("Gdrive error:", uploadErr);
-        await pushLog(`Menyimpan entri arsip terstruktur ke repositori server...`, 300);
+        await pushLog(`Peringatan: Gagal mengunggah fisik ke Google Drive (${uploadErr.message || uploadErr}). Melanjutkan pencatatan database...`, 300);
       }
     } else {
-      await pushLog(`Menyusun metadata XML/JSON ke repositori Cloud Arsiparis...`, 300);
+      await pushLog(`Token Google Drive belum terdeteksi. Berkas dicatat di database lokal/cloud...`, 300);
     }
     
+    // Simpan permanen langsung ke database Cloud Firestore
     try {
-// Simpan langsung ke database Cloud Firestore yang permanen
-      try {
-        await addDoc(collection(db, "archives"), {
-          name: autoFormattedFileName,
-          category: category,
-          fileSize: fileSize,
-          uploadedBy: employee.name,
-          nip: employee.nip,
-          type: docType,
-          description: description,
-          gdriveId: realGDriveId || "local-sync",
-          timestamp: new Date().toISOString()
-        });
+      await addDoc(collection(db, "archives"), {
+        name: autoFormattedFileName,
+        category: category,
+        fileSize: fileSize,
+        uploadedBy: employee.name,
+        nip: employee.nip,
+        type: docType,
+        description: description,
+        gdriveId: realGDriveId || "local-sync",
+        timestamp: new Date().toISOString()
+      });
 
-        await pushLog(`Berhasil mencatat riwayat ke Cloud Firestore database!`, 300);
-        await pushLog("Penyimpanan Terpusat Berhasil! File tersimpan aman dan tidak akan reset.", 300);
-      } catch (dbError) {
-        console.error("Gagal simpan ke Firestore:", dbError);
-        await pushLog("Peringatan: Gagal menyinkronkan ke database cloud.", 300);
-      }
+      await pushLog(`Berhasil mencatat riwayat ke Cloud Firestore database!`, 300);
+      await pushLog("Penyimpanan Terpusat Berhasil! File tersimpan aman dan tidak akan reset.", 300);
+      setUploadState("success");
+      onUploadSuccess({
+        name: autoFormattedFileName,
+        category,
+        fileSize,
+        uploadedBy: employee.name,
+        nip: employee.nip,
+        type: docType,
+        description,
+        gdriveId: realGDriveId || "local-sync"
+      });
+    } catch (dbError: any) {
+      console.error("Gagal simpan ke Firestore:", dbError);
+      await pushLog(`Peringatan Database: ${dbError.message || dbError}`, 300);
+      setUploadState("error");
     }
   };
 
@@ -653,7 +662,28 @@ export default function UploadModal({
               </button>
             </div>
           );
-        })()}
+        })}
+
+        {/* Error Screen if database failed */}
+        {uploadState === "error" && (
+          <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
+            <div className="p-3 bg-red-100 dark:bg-red-950/80 rounded-full text-red-600 dark:text-red-400">
+              <AlertCircle className="h-10 w-10" />
+            </div>
+            <h4 className="font-bold text-slate-800 dark:text-slate-100 text-base">
+              Gagal Menyimpan ke Database Cloud
+            </h4>
+            <p className="text-xs text-slate-500 max-w-sm">
+              Periksa kembali koneksi internet Anda atau pastikan aturan izin Firestore sudah diatur dengan benar agar data dapat tercatat.
+            </p>
+            <button
+              onClick={() => setUploadState("idle")}
+              className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold"
+            >
+              Coba Lagi
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
